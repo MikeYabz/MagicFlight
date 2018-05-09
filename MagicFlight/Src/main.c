@@ -95,7 +95,22 @@ int main(void)
   MX_TIM3_Init();
 
   /* USER CODE BEGIN 2 */
-
+	
+	HAL_TIM_Base_Init(&htim1);
+	HAL_TIM_Base_Init(&htim3);
+	HAL_TIMEx_PWMN_Start(&htim1,TIM_CHANNEL_1);
+	
+	
+		TIM1->CCR3 = 1000;
+		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+		
+		TIM1->CCR1 = 1000;
+		HAL_TIMEx_PWMN_Start(&htim1,TIM_CHANNEL_1);
+		
+		//TIM3->CCR1 = 1000;
+		//HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+		
+		
   /* USER CODE END 2 */
 
   /* Infinite loop */
