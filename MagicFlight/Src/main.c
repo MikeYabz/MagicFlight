@@ -94,22 +94,27 @@ int main(void)
   MX_ADC_Init();
   MX_TIM3_Init();
 
-  /* USER CODE BEGIN 2 */
+  /* USER CODE BEGIN 2 */	
 	
-	HAL_TIM_Base_Init(&htim1);
+	
+	
+/************************************************************************************/
+//	*		Initialize Timers foir PWM
+/************************************************************************************/	
 	HAL_TIM_Base_Init(&htim3);
-	HAL_TIMEx_PWMN_Start(&htim1,TIM_CHANNEL_1);
-	
-	
-		TIM1->CCR3 = 1000;
-		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
 		
-		TIM1->CCR1 = 1000;
-		HAL_TIMEx_PWMN_Start(&htim1,TIM_CHANNEL_1);
+	TIM3->CCR1 = 0;
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 		
-		//TIM3->CCR1 = 1000;
-		//HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	TIM3->CCR2 = 0;
+	HAL_TIMEx_PWMN_Start(&htim3,TIM_CHANNEL_2);
 		
+	TIM3->CCR4 = 0;
+	HAL_TIMEx_PWMN_Start(&htim3,TIM_CHANNEL_4);		
+/*************************************END********************************************/
+
+
+
 		
   /* USER CODE END 2 */
 
@@ -120,7 +125,163 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
+		HAL_Delay(1);
+		
+		
+		
+		
+/************************************************************************************/
+//	*		Read Input and Output Voltages
+/************************************************************************************/		
+		uint16_t outputVoltageReading;
+		uint16_t inputVoltageReading;	
+		HAL_ADC_Start(&hadc);
+		HAL_ADC_PollForConversion(&hadc,5);
+		inputVoltageReading = HAL_ADC_GetValue(&hadc);
+		HAL_ADC_PollForConversion(&hadc,5);
+		outputVoltageReading = HAL_ADC_GetValue(&hadc);
+		HAL_ADC_Stop(&hadc);
+/*************************************END********************************************/
+		
 
+
+
+/************************************************************************************/
+//	*		Calculate "Temperature" of Output Voltage
+/************************************************************************************/
+
+			//range should be from 0.6V(819) to 1.5V(2047)
+		#define MINIMUM 819
+		#define MAXIMUM 2047
+		const uint16_t DIFFERENCE = MAXIMUM - MINIMUM;
+		const double PWM_PERIOD = (double)htim3.Init.Period;
+		double Red;
+		double Green;
+		double Blue;		
+		double voltagePercentageOfMax; 
+
+		
+		voltagePercentageOfMax = (outputVoltageReading-MINIMUM)/DIFFERENCE;
+		
+					//Fade From Blue to Turquoise
+		if (voltagePercentageOfMax < 0.25)
+		{
+			Red = 0;
+			Green = PWM_PERIOD * (voltagePercentageOfMax / 0.25);
+			Blue = PWM_PERIOD;
+		}
+		
+				//Fade From Turquoise to Green
+		else if ((voltagePercentageOfMax >= 0.25) && (voltagePercentageOfMax < 0.5))
+		{
+			Red = 0;
+			Green = PWM_PERIOD;
+			Blue = PWM_PERIOD - (PWM_PERIOD * ((voltagePercentageOfMax - 0.25) / 0.25));
+		} 
+		
+				//Fade From Green to Yellow
+		else if ((voltagePercentageOfMax >= 0.5) && (voltagePercentageOfMax < 0.75))
+		{
+			Red = (PWM_PERIOD * ((voltagePercentageOfMax - 0.50) / 0.25));
+			Green = PWM_PERIOD;
+			Blue = 0;
+		} 
+		
+				//Fade From Yellow to Red
+		else if (voltagePercentageOfMax > 0.75)
+		{
+			Red = PWM_PERIOD;
+			Green = PWM_PERIOD - (PWM_PERIOD * ((voltagePercentageOfMax - 0.75) / 0.25));
+			Blue = 0;
+		}
+	
+		static double filteredRed = 0;
+		static double filteredGreen = 0;
+		static double filteredBlue = 0;
+		
+		#define LPF_Strength 100		
+		filteredRed = (Red + (filteredRed * LPF_Strength-1))/LPF_Strength;
+		filteredRed = (Green + (filteredGreen * LPF_Strength-1))/LPF_Strength;
+		filteredRed = (Blue + (filteredBlue * LPF_Strength-1))/LPF_Strength;						
+		
+		int16_t pwmRed;
+		int16_t pwmGreen;
+		int16_t pwmBlue;		
+		pwmRed = (uint16_t)filteredRed;
+		pwmGreen = (uint16_t)filteredGreen;
+		pwmBlue = (uint16_t)filteredBlue;		
+		
+			//Checking Boundaries of 0-(max pwm period) to make sure nothing broke
+		if (pwmRed < 0)
+		{
+			pwmRed = 0;
+		}
+		else if (pwmRed > PWM_PERIOD)
+		{
+			pwmRed = PWM_PERIOD;
+		}
+		
+		
+		if (pwmGreen < 0)
+		{
+			pwmGreen = 0;
+		}
+		else if (pwmGreen > PWM_PERIOD)
+		{
+			pwmGreen = PWM_PERIOD;
+		}
+		
+		
+		if (pwmBlue < 0)
+		{
+			pwmBlue = 0;
+		}
+		else if (pwmBlue > PWM_PERIOD)
+		{
+			pwmBlue = PWM_PERIOD;
+		}
+/*************************************END********************************************/
+
+
+		
+		
+		
+		
+/************************************************************************************/
+//	*		Low Battery Indicator.  Flahses white 3 time quickly every 2.5s
+/************************************************************************************/
+		#define placeholder 0
+		if (inputVoltageReading < placeholder)	//if input voltage is under threshold which means the battery is low
+		{
+			uint32_t loopTimer = HAL_GetTick() % 2500;	//will count to 2500ms then restart
+			if ( 
+				((loopTimer > 100) && (loopTimer < 200)) || 
+				((loopTimer > 400) && (loopTimer < 500)) || 
+				((loopTimer > 700) && (loopTimer < 800))	)			
+			{
+				pwmRed = PWM_PERIOD;
+				pwmGreen = PWM_PERIOD;
+				pwmBlue = PWM_PERIOD;
+			}
+		}	
+/*************************************END********************************************/		
+		
+		
+		
+		
+		
+/************************************************************************************/
+//	*		Set RGB PWMs
+/************************************************************************************/		
+		TIM3->CCR1 = pwmRed;
+		TIM3->CCR2 = pwmGreen;
+		TIM3->CCR4 = pwmBlue;
+/*************************************END********************************************/	
+
+
+		
+		
+		
   }
   /* USER CODE END 3 */
 
